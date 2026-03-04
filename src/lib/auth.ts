@@ -87,24 +87,8 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async signIn({ user, account }) {
-      // For OAuth, ensure user has a role (default to ATHLETE if new)
-      if (account?.provider === "google") {
-        const existingUser = await prisma.user.findUnique({
-          where: { email: user.email! },
-        });
-
-        if (!existingUser) {
-          // Create user with default role - they can change it later
-          await prisma.user.create({
-            data: {
-              email: user.email!,
-              name: user.name || "User",
-              image: user.image,
-              role: "ATHLETE",
-            },
-          });
-        }
-      }
+      // PrismaAdapter handles user creation for OAuth with default role ATHLETE.
+      // No manual creation needed since schema has @default(ATHLETE).
       return true;
     },
   },

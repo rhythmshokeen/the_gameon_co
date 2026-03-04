@@ -94,7 +94,7 @@ model User {
   email         String    @unique
   password      String?
   image         String?
-  role          Role
+  role          Role      @default(ATHLETE)
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
