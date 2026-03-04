@@ -1,0 +1,588 @@
+// GameOn Co. — Sports Talent Marketplace
+// Production-ready Prisma Schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ─────────────────────────────────────────────
+
+enum Role {
+  ATHLETE
+  COACH
+  ORGANIZER
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ApplicationStatus {
+  APPLIED
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum ConnectionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  DOCUMENT
+}
+
+enum CompetitionType {
+  TOURNAMENT
+  TRIAL
+  FRIENDLY
+  TRYOUT
+  RANKED
+}
+
+enum OpportunityType {
+  SCHOLARSHIP
+  TEAM_TRIAL
+  CLUB_CONTRACT
+  INTERNSHIP
+  CAMP
+}
+
+enum OpportunityAppStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum ModuleLevel {
+  BEGINNER
+  ADVANCED
+  ELITE
+}
+
+enum InjurySeverity {
+  MINOR
+  MODERATE
+  SEVERE
+}
+
+enum InjuryStatus {
+  ACTIVE
+  RECOVERING
+  RECOVERED
+}
+
+// ─── User ──────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String?
+  image         String?
+  role          Role
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  athleteProfile      AthleteProfile?
+  organizedComps      Competition[]     @relation("Organizer")
+  sentConnections     Connection[]      @relation("Sender")
+  receivedConnections Connection[]      @relation("Receiver")
+  activityLogs        ActivityLog[]
+  accounts            Account[]
+  sessions            Session[]
+
+  // Feature Hub relations
+  moduleProgress       UserModuleProgress[]
+  opportunityApps      OpportunityApplication[]
+  injuryRecords        InjuryRecord[]
+  rehabPrograms        RehabProgram[]
+  recoveryLogs         RecoveryLog[]
+  trainingSessions     TrainingSession[]
+  groupMemberships     GroupMember[]
+  createdGroups        Group[]               @relation("GroupCreator")
+  createdOpportunities Opportunity[]         @relation("OpportunityCreator")
+
+  @@index([email])
+  @@index([role])
+}
+
+// ─── NextAuth Models ───────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Athlete Profile ───────────────────────────────────
+
+model AthleteProfile {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  sport           String?
+  position        String?
+  bio             String?   @db.Text
+  height          Float?
+  weight          Float?
+  experienceYears Int?
+  dateOfBirth     DateTime?
+  nationality     String?
+  city            String?
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  performanceStats PerformanceStat[]
+  achievements     Achievement[]
+  mediaHighlights  MediaHighlight[]
+  applications     Application[]
+
+  @@index([sport])
+  @@index([position])
+}
+
+// ─── Performance Stats ─────────────────────────────────
+
+model PerformanceStat {
+  id          String   @id @default(cuid())
+  athleteId   String
+  metricName  String
+  metricValue String
+  unit        String?
+  recordedAt  DateTime @default(now())
+
+  athlete AthleteProfile @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@index([athleteId])
+  @@index([metricName])
+}
+
+// ─── Achievements ──────────────────────────────────────
+
+model Achievement {
+  id          String    @id @default(cuid())
+  athleteId   String
+  title       String
+  description String?   @db.Text
+  date        DateTime?
+  createdAt   DateTime  @default(now())
+
+  athlete AthleteProfile @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@index([athleteId])
+}
+
+// ─── Media Highlights ──────────────────────────────────
+
+model MediaHighlight {
+  id        String    @id @default(cuid())
+  athleteId String
+  mediaUrl  String
+  mediaType MediaType
+  title     String?
+  createdAt DateTime  @default(now())
+
+  athlete AthleteProfile @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@index([athleteId])
+}
+
+// ─── Competitions ──────────────────────────────────────
+
+model Competition {
+  id                 String             @id @default(cuid())
+  title              String
+  sport              String
+  location           String
+  startDate          DateTime
+  endDate            DateTime
+  level              String
+  competitionType    CompetitionType    @default(TOURNAMENT)
+  description        String?            @db.Text
+  maxParticipants    Int?
+  entryFee           Float?
+  prizeInfo          String?
+  organizerId        String?
+  verificationStatus VerificationStatus @default(PENDING)
+  scoutAttendance    Boolean            @default(false)
+
+  // Scraper integration fields
+  source             String?            // e.g. "bookmyshow", "townscript", "tournaments360"
+  sourceUrl          String?            // Original URL on source platform
+  sourceId           String?            // ID on source platform for dedup
+  organizerName      String?            // Name of organizer (from scraper or manual)
+  imageUrl           String?            // Event banner/image URL
+  lastSyncedAt       DateTime?          // Last time this record was synced from scraper
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  organizer    User?         @relation("Organizer", fields: [organizerId], references: [id], onDelete: SetNull)
+  applications Application[]
+
+  @@unique([title, startDate, source], name: "unique_competition_source")
+  @@index([sport])
+  @@index([location])
+  @@index([startDate])
+  @@index([verificationStatus])
+  @@index([organizerId])
+  @@index([source])
+}
+
+// ─── Scrape Log ────────────────────────────────────────
+
+model ScrapeLog {
+  id            String   @id @default(cuid())
+  source        String   // "bookmyshow", "townscript", "tournaments360"
+  status        String   // "success", "partial", "failed"
+  eventsFound   Int      @default(0)
+  eventsInserted Int     @default(0)
+  eventsSkipped  Int     @default(0)
+  eventsFailed   Int     @default(0)
+  durationMs    Int      @default(0)
+  error         String?  @db.Text
+  triggeredBy   String?  // userId of admin who triggered, or "cron"
+  createdAt     DateTime @default(now())
+
+  @@index([source])
+  @@index([createdAt])
+}
+
+// ─── Applications ──────────────────────────────────────
+
+model Application {
+  id            String            @id @default(cuid())
+  competitionId String
+  athleteId     String
+  status        ApplicationStatus @default(APPLIED)
+  message       String?           @db.Text
+  appliedAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  competition Competition    @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  athlete     AthleteProfile @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@unique([competitionId, athleteId])
+  @@index([competitionId])
+  @@index([athleteId])
+  @@index([status])
+}
+
+// ─── Connections ───────────────────────────────────────
+
+model Connection {
+  id         String           @id @default(cuid())
+  senderId   String
+  receiverId String
+  status     ConnectionStatus @default(PENDING)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  sender   User @relation("Sender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([status])
+}
+
+// ─── Activity Log ──────────────────────────────────────
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  details   String?  @db.Text
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════════════════
+// LEARN — Structured Learning Paths
+// ═══════════════════════════════════════════════════════
+
+model LearningPath {
+  id          String      @id @default(cuid())
+  title       String
+  slug        String      @unique
+  description String?     @db.Text
+  sport       String?
+  category    String      // e.g., "Sport Fundamentals", "Nutrition", "Mental Training"
+  iconName    String?
+  sortOrder   Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  modules LearningModule[]
+
+  @@index([category])
+  @@index([sport])
+}
+
+model LearningModule {
+  id            String      @id @default(cuid())
+  pathId        String
+  title         String
+  description   String?     @db.Text
+  content       String?     @db.Text
+  level         ModuleLevel @default(BEGINNER)
+  durationMins  Int         @default(15)
+  sortOrder     Int         @default(0)
+  prerequisites String[]    // IDs of prerequisite modules
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  path     LearningPath         @relation(fields: [pathId], references: [id], onDelete: Cascade)
+  progress UserModuleProgress[]
+
+  @@index([pathId])
+  @@index([level])
+}
+
+model UserModuleProgress {
+  id          String   @id @default(cuid())
+  userId      String
+  moduleId    String
+  completed   Boolean  @default(false)
+  progress    Int      @default(0) // 0-100
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module LearningModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, moduleId])
+  @@index([userId])
+  @@index([moduleId])
+}
+
+// ═══════════════════════════════════════════════════════
+// APPLY — Opportunity Gateway
+// ═══════════════════════════════════════════════════════
+
+model Opportunity {
+  id              String          @id @default(cuid())
+  title           String
+  type            OpportunityType
+  sport           String
+  location        String
+  description     String?         @db.Text
+  requirements    String?         @db.Text
+  deadline        DateTime
+  organization    String
+  contactEmail    String?
+  stipend         String?
+  slots           Int?
+  creatorId       String
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  creator      User                     @relation("OpportunityCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  applications OpportunityApplication[]
+
+  @@index([type])
+  @@index([sport])
+  @@index([deadline])
+  @@index([creatorId])
+}
+
+model OpportunityApplication {
+  id              String             @id @default(cuid())
+  opportunityId   String
+  userId          String
+  status          OpportunityAppStatus @default(DRAFT)
+  coverLetter     String?            @db.Text
+  resumeUrl       String?
+  recommendationUrl String?
+  metricsSnapshot String?            @db.Text // JSON snapshot of performance at time of apply
+  notes           String?            @db.Text
+  submittedAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([opportunityId, userId])
+  @@index([opportunityId])
+  @@index([userId])
+  @@index([status])
+}
+
+// ═══════════════════════════════════════════════════════
+// RECOVER — Health & Longevity System
+// ═══════════════════════════════════════════════════════
+
+model InjuryRecord {
+  id          String         @id @default(cuid())
+  userId      String
+  bodyPart    String
+  description String?        @db.Text
+  severity    InjurySeverity @default(MINOR)
+  status      InjuryStatus   @default(ACTIVE)
+  occurredAt  DateTime       @default(now())
+  recoveredAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model RehabProgram {
+  id           String   @id @default(cuid())
+  userId       String
+  title        String
+  description  String?  @db.Text
+  exercises    String?  @db.Text // JSON array of exercises
+  durationWeeks Int     @default(4)
+  progress     Int      @default(0) // 0-100
+  isActive     Boolean  @default(true)
+  startedAt    DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model RecoveryLog {
+  id              String   @id @default(cuid())
+  userId          String
+  date            DateTime @default(now())
+  sleepHours      Float?
+  sleepQuality    Int?     // 1-10
+  stressLevel     Int?     // 1-10
+  muscleSoreness  Int?     // 1-10
+  energyLevel     Int?     // 1-10
+  trainingLoad    Float?   // RPE * duration
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([date])
+}
+
+// ═══════════════════════════════════════════════════════
+// TRACK — Performance Analytics
+// ═══════════════════════════════════════════════════════
+
+model TrainingSession {
+  id              String   @id @default(cuid())
+  userId          String
+  date            DateTime @default(now())
+  type            String   // "Training", "Match", "Recovery"
+  sport           String?
+  durationMins    Int
+  intensityRpe    Int?     // 1-10 RPE scale
+  caloriesBurned  Int?
+  speedAvg        Float?
+  speedMax        Float?
+  distanceKm      Float?
+  heartRateAvg    Int?
+  heartRateMax    Int?
+  skillAccuracy   Float?   // 0-100
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([date])
+  @@index([type])
+}
+
+// ═══════════════════════════════════════════════════════
+// CONNECT — Groups / Team Rooms
+// ═══════════════════════════════════════════════════════
+
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  sport       String?
+  isPrivate   Boolean  @default(false)
+  creatorId   String
+  maxMembers  Int      @default(50)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  creator User          @relation("GroupCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  members GroupMember[]
+
+  @@index([sport])
+  @@index([creatorId])
+}
+
+model GroupMember {
+  id       String   @id @default(cuid())
+  groupId  String
+  userId   String
+  role     String   @default("MEMBER") // MEMBER, ADMIN
+  joinedAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+}
