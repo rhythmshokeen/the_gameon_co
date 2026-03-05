@@ -31,6 +31,7 @@ export default withAuth(
           path === "/" ||
           path.startsWith("/auth") ||
           path.startsWith("/api/auth") ||
+          path.startsWith("/api/cron") ||
           path.startsWith("/_next") ||
           path.startsWith("/favicon")
         ) {
